@@ -1,0 +1,28 @@
+# action.yml
+name: 'AWS Sustainability Scanner GitHub Action'
+author: 'AWS Sustainability'
+description: 'Run AWS Sustainability Scan against infrastructure as code as a pre-packaged GitHub Action.'
+branding:
+  icon: 'cloud'
+  color: 'orange'
+inputs:
+  file:
+    description: 'File with infrastructure code to scan'
+    required: true
+  directory:
+    description: 'Directory with infrastructure code to scan'
+    required: false
+    default: '.'
+  rules_file:
+    description: 'File to extend set of rules to scan'
+    required: false
+outputs:
+  results:
+    description: 'The results from the sustainability scan'
+runs:
+  using: 'docker'
+  image: 'Dockerfile'
+  args:
+    - ${{ inputs.file }}
+    - ${{ inputs.directory }}
+    - ${{ inputs.rules_file }}
