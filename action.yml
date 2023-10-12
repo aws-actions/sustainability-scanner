@@ -1,20 +1,20 @@
 # action.yml
 name: 'AWS Sustainability Scanner GitHub Action'
 author: 'AWS Sustainability'
-description: 'Run AWS Sustainability Scan against infrastructure as code as a pre-packaged GitHub Action.'
+description: 'Run AWS Sustainability Scanner against infrastructure as code as a pre-packaged GitHub Action.'
 branding:
   icon: 'cloud'
   color: 'orange'
 inputs:
   file:
-    description: 'File with infrastructure code to scan'
-    required: true
-  directory:
-    description: 'Directory with infrastructure code to scan'
+    description: 'File path of template to scan'
     required: false
+  directory:
+    description: 'Directory path with template files to scan'
+    required: true
     default: '.'
   rules_file:
-    description: 'File to extend set of rules to scan'
+    description: 'File path to extend set of rules'
     required: false
 outputs:
   results:
