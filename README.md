@@ -8,7 +8,7 @@ In your Github worflows, under steps, add the following:
 
 ```yml
 name: AWS Sustainability Scanner
-uses: aws-actions/sustainability-scanner@latest
+uses: aws-actions/sustainability-scanner@v1
 with:
   <INPUTS>
 ```
@@ -21,7 +21,7 @@ Path to the specific file you want to scan.
 
 ### `directory`
 
-Path to the directory you want to scan. Every `.yml` and `.yaml` files that this directory contain will be scan.
+Path to the directory you want to scan. Every `.json`, `.yml` and `.yaml` files that this directory contain will be scan.
 
 ### `rules_file`
 
@@ -57,7 +57,7 @@ jobs:
 
       # Run AWS Sustainability Scanner against template.yaml
       - name: AWS Sustainability Scanner
-        uses: aws-actions/sustainability-scanner@latest
+        uses: aws-actions/sustainability-scanner@v1
         with:
           file: 'template.yaml'
 ```
@@ -81,9 +81,9 @@ jobs:
 
       # Run AWS Sustainability Scanner against "my-cf-stacks" folder with an additional rules set
       - name: AWS Sustainability Scanner
-        uses: aws-actions/sustainability-scanner@latest
+        uses: aws-actions/sustainability-scanner@v1
         with:
-          directory: 'my-cf-stacks/'
+          directory: 'my-cf-stacks'
           rules-file: 'tests/additional-rules.json'
 ```
 
