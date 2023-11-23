@@ -54,4 +54,9 @@ for RESOURCE in "${RESOURCES_TO_SCAN[@]}"; do
   fi
 done
 
+# Save output to GitHub
+EOF=$(dd if=/dev/urandom bs=15 count=1 status=none | base64)
+{ echo "SUSSCAN_RESULTS<<$EOF"; echo "${SUSSCAN_RESULTS:0:65536}"; echo "$EOF"; } >> $GITHUB_ENV
+{ echo "results<<$EOF"; echo "$SUSSCAN_RESULTS"; echo "$EOF"; } >> $GITHUB_OUTPUT
+
 exit $SUSSCAN_EXIT_CODE

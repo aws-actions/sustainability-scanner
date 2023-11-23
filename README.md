@@ -27,6 +27,11 @@ Path to the directory you want to scan. Every `.json`, `.yml` and `.yaml` files 
 
 Path to your `.json` file to extend the Susscan rules set.
 
+## Outputs
+
+### `results`
+
+The results from the scanner. See how to use it in this [example](#use-output-for-comment-pull-request).
 
 ## Example usage
 
@@ -85,6 +90,50 @@ jobs:
         with:
           directory: 'my-cf-stacks'
           rules-file: 'tests/additional-rules.json'
+```
+
+### Use output for comment pull requests
+
+```yml
+name: susscan
+
+on:
+  pull_request:
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: AWS Sustainability Scanner
+        uses: aws-actions/sustainability-scanner@v1
+        id: scanner
+        with:
+          file: 'template.yaml'
+
+      # Use scanner output to create a comment on pull request
+      - name: Comment on pull request
+        uses: actions/github-script@v7
+        with:
+          script: |
+            result=${{ (steps.scanner.outputs.results) }}
+            const score = result.sustainability_score
+            const number_failed_rules = result.failed_rules.length
+
+            if (score === 0) {
+              body = `✅ You have failed {number_failed_rules} rules on running the sustainability scanner.`
+            } else {
+              body = `❌ Your current sustainability score is **${score}** and you have failed **${number_failed_rules}** rules.\nCheck out the output of the sustainability scanner for detailed recommendations on how to improve your CloudFormation template!`
+            }
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body
+            })
 ```
 
 ## Security
