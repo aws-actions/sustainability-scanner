@@ -31,7 +31,7 @@ Path to your `.json` file to extend the Susscan rules set.
 
 ### `results`
 
-The results from the scanner. See how to use it in this [example](#use-output-for-comment-pull-request).
+The results from the scanner. See how to use it in this [example](#use-output-for-commenting-pull-requests).
 
 ## Example usage
 
@@ -92,7 +92,7 @@ jobs:
           rules-file: 'tests/additional-rules.json'
 ```
 
-### Use output for comment pull requests
+### Use output for commenting pull requests
 
 ```yml
 name: susscan
