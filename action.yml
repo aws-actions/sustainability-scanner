@@ -11,7 +11,7 @@ inputs:
     required: false
   directory:
     description: 'Directory path with template files to scan'
-    required: true
+    required: false
     default: '.'
   rules_file:
     description: 'File path to extend set of rules'
