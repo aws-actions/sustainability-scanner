@@ -123,9 +123,9 @@ jobs:
             const number_failed_rules = result.failed_rules.length
 
             if (score === 0) {
-              body = `✅ You have failed {number_failed_rules} rules on running the sustainability scanner.`
+              body = `✅ Your current sustainability score is **${score}**. Sustainability scanner did not find any improvements to apply to your template.`
             } else {
-              body = `❌ Your current sustainability score is **${score}** and you have failed **${number_failed_rules}** rules.\nCheck out the output of the sustainability scanner for detailed recommendations on how to improve your CloudFormation template!`
+              body = `❌ Your current sustainability score is **${score}**. Sustainability scanner suggests **${number_failed_rules}** improvements to apply to your template.\nCheck out the details of the sustainability scanner here: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}`
             }
             
             github.rest.issues.createComment({
