@@ -26,7 +26,7 @@ RESOURCES_TO_SCAN=()
 if [ -n "$INPUT_FILE" ]; then
   RESOURCES_TO_SCAN+=("$INPUT_FILE")
 elif [ -n "$INPUT_STACK_NAME" ]; then
-  FORMAT="cdk"
+  FORMAT="--format cdk"
   RESOURCES_TO_SCAN+=("$INPUT_STACK_NAME")
 else
 # Otherwise scan directory provided (root by default)
