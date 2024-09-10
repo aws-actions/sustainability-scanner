@@ -1,28 +1,31 @@
-# action.yml
-name: 'AWS Sustainability Scanner GitHub Action'
-author: 'AWS Sustainability'
-description: 'Run AWS Sustainability Scanner against infrastructure as code as a pre-packaged GitHub Action.'
+name: AWS Sustainability Scanner GitHub Action
+author: AWS Sustainability
+description: Run AWS Sustainability Scanner against infrastructure as code as a pre-packaged GitHub Action
 branding:
-  icon: 'cloud'
-  color: 'orange'
+  icon: check-circle
+  color: green
 inputs:
   file:
-    description: 'File path of template to scan'
+    description: File path of the CloudFormation template to be scanned
     required: false
   directory:
-    description: 'Directory path with template files to scan'
+    description: Directory path with CloudFormation files to be scanned
     required: false
     default: '.'
+  stack_name:
+    description: CDK stack name to be scanned
+    required: false
   rules_file:
-    description: 'File path to extend set of rules'
+    description: File path to extend set of rules
     required: false
 outputs:
   results:
-    description: 'The results from the sustainability scan'
+    description: Results from the sustainability scan
 runs:
-  using: 'docker'
-  image: 'Dockerfile'
+  using: docker
+  image: Dockerfile
   args:
     - ${{ inputs.file }}
     - ${{ inputs.directory }}
+    - ${{ inputs.stack_name }}
     - ${{ inputs.rules_file }}
