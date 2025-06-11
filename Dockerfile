@@ -8,10 +8,10 @@ RUN apk --no-cache add curl; \
 
 # Install CFN Guard
 RUN curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/aws-cloudformation/cloudformation-guard/main/install-guard.sh | sh
-ENV PATH "/root/.guard/bin:${PATH}"
+ENV PATH="/root/.guard/bin:${PATH}"
 
 # Install AWS SusScan
-RUN pip3 install git+https://github.com/awslabs/sustainability-scanner.git@v1.0.1
+RUN pip3 install sustainability-scanner
 
 # Uninstall libs
 RUN apk del git; \
