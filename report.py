@@ -8,7 +8,8 @@ susscanner (one report per scanned template), then:
      - A single report is passed through unchanged (backward compatible).
      - Multiple reports are merged into an aggregate object with a total
        "sustainability_score" and a "reports" array.
-  2. Evaluates optional failure gates from the action inputs:
+  2. Appends a Markdown summary to $GITHUB_STEP_SUMMARY when it is set.
+  3. Evaluates optional failure gates from the action inputs:
      - INPUT_FAIL_ON_FINDINGS: fail if any sustainability improvement is found.
      - INPUT_MAX_SCORE_THRESHOLD: fail if the total sustainability score
        exceeds this value (a higher score means more improvements to apply).
@@ -65,6 +66,65 @@ def merge_reports(reports):
     }
 
 
+def render_rule_row(rule):
+    """Render a single failed rule as a Markdown table row."""
+    name = rule.get("rule_name", "")
+    links = rule.get("links", [])
+    if links:
+        name = f"[{name}]({links[0]})"
+    severity = rule.get("severity", "")
+    message = rule.get("message", "").replace("|", "\\|").replace("\n", " ")
+    resources = "<br>".join(
+        "`{}`{}".format(
+            res.get("name", ""),
+            f" (line {res['line']})" if res.get("line") else "",
+        )
+        for res in rule.get("resources", [])
+    )
+    return f"| {name} | {severity} | {message} | {resources} |"
+
+
+def render_summary(reports):
+    """Render the Markdown step summary for the scanned templates."""
+    lines = ["# AWS Sustainability Scanner Report", ""]
+
+    if not reports:
+        lines.append("No template files were scanned.")
+        return "\n".join(lines) + "\n"
+
+    lines += [
+        "| Template | Sustainability score | Findings |",
+        "| --- | ---: | ---: |",
+    ]
+    for report in reports:
+        file_name = report.get("file", "")
+        score = report.get("sustainability_score", 0)
+        findings = len(report.get("failed_rules", []))
+        status = "✅" if findings == 0 else "❌"
+        lines.append(f"| {status} `{file_name}` | {score} | {findings} |")
+    lines.append("")
+
+    for report in reports:
+        failed_rules = report.get("failed_rules", [])
+        if not failed_rules:
+            continue
+        lines += [
+            f"## `{report.get('file', '')}`",
+            "",
+            "| Rule | Severity | Recommendation | Resources |",
+            "| --- | --- | --- | --- |",
+        ]
+        lines += [render_rule_row(rule) for rule in failed_rules]
+        lines.append("")
+
+    lines += [
+        "Learn more in the [AWS Well-Architected Sustainability Pillar]"
+        "(https://docs.aws.amazon.com/wellarchitected/latest/sustainability-pillar/sustainability-pillar.html).",
+        "",
+    ]
+    return "\n".join(lines)
+
+
 def evaluate_gates(reports):
     """Evaluate failure gates; return a failure message or None."""
     total_findings = sum(len(r.get("failed_rules", [])) for r in reports)
@@ -104,6 +164,12 @@ def main():
 
     # Consolidated report on stdout, captured by entrypoint.sh
     print(json.dumps(merge_reports(reports), indent=4))
+
+    # Markdown step summary
+    summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
+    if summary_path:
+        with open(summary_path, "a") as f:
+            f.write(render_summary(reports))
 
     # Failure gates
     failure = evaluate_gates(reports)

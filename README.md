@@ -59,6 +59,10 @@ When a single file or CDK stack is scanned, `results` contains the scanner repor
 }
 ```
 
+## Job summary
+
+The action writes a Markdown summary of the scan to the workflow run's job summary, listing each scanned template with its sustainability score and the identified improvements, with links to the related AWS Well-Architected Sustainability Pillar best practices.
+
 ## Example usage
 
 ### Simple usage with one specific file

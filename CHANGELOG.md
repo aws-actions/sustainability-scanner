@@ -7,6 +7,7 @@ All notable changes to this project will be documented in this file. See [standa
 ### Features
 
 - add `fail_on_findings` and `max_score_threshold` inputs to use the action as a CI/CD quality gate [#11](https://github.com/aws-actions/sustainability-scanner/issues/11)
+- render scan results as a Markdown table in the GitHub job summary [#11](https://github.com/aws-actions/sustainability-scanner/issues/11)
 
 ### Bug Fixes
 
