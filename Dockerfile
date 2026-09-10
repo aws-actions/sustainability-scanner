@@ -1,5 +1,5 @@
 # Container image that runs your code
-FROM python:3.9-alpine
+FROM python:3.12-alpine
 
 # Install required libs
 RUN apk --no-cache add curl; \
