@@ -37,6 +37,20 @@ Path to your `.json` file to extend the Susscan rules set.
 
 The results from the scanner. See how to use it in this [example](#use-output-for-commenting-pull-requests).
 
+When a single file or CDK stack is scanned, `results` contains the scanner report for that resource. When a directory with multiple templates is scanned, `results` contains a consolidated report with the total `sustainability_score` and a `reports` array holding the individual report of each scanned template:
+
+```json
+{
+    "title": "Sustainability Scanner Report",
+    "version": "1.3.0",
+    "sustainability_score": 12,
+    "reports": [
+        { "file": "template-a.yaml", "sustainability_score": 8, "failed_rules": ["..."] },
+        { "file": "template-b.yaml", "sustainability_score": 4, "failed_rules": ["..."] }
+    ]
+}
+```
+
 ## Example usage
 
 ### Simple usage with one specific file

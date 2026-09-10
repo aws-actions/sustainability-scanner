@@ -48,6 +48,7 @@ else
 fi
 
 # Build command
+RESULTS_FILE=$(mktemp)
 for RESOURCE in "${RESOURCES_TO_SCAN[@]}"; do
   echo "Running susscanner on file: $RESOURCE"
   echo "susscanner $FORMAT $RESOURCE $RULES_FILE"
@@ -57,15 +58,21 @@ for RESOURCE in "${RESOURCES_TO_SCAN[@]}"; do
 
   if [ $SUSSCAN_EXIT_CODE -eq 0 ]; then
     echo "${SUSSCAN_RESULTS}"
+    # Accumulate each report so results are not overwritten between scans
+    echo "${SUSSCAN_RESULTS}" >> "$RESULTS_FILE"
   else
     echo "Scan failed with exit code $SUSSCAN_EXIT_CODE."
     exit $SUSSCAN_EXIT_CODE
   fi
 done
 
+# Consolidate reports, write the step summary and evaluate failure gates
+MERGED_RESULTS=$(python3 "${REPORT_SCRIPT:-/report.py}" "$RESULTS_FILE")
+GATE_EXIT_CODE=$?
+
 # Save output to GitHub
 EOF=$(dd if=/dev/urandom bs=15 count=1 status=none | base64)
-{ echo "SUSSCAN_RESULTS<<$EOF"; echo "${SUSSCAN_RESULTS:0:65536}"; echo "$EOF"; } >> $GITHUB_ENV
-{ echo "results<<$EOF"; echo "$SUSSCAN_RESULTS"; echo "$EOF"; } >> $GITHUB_OUTPUT
+{ echo "SUSSCAN_RESULTS<<$EOF"; echo "${MERGED_RESULTS:0:65536}"; echo "$EOF"; } >> $GITHUB_ENV
+{ echo "results<<$EOF"; echo "$MERGED_RESULTS"; echo "$EOF"; } >> $GITHUB_OUTPUT
 
-exit $SUSSCAN_EXIT_CODE
+exit $GATE_EXIT_CODE
