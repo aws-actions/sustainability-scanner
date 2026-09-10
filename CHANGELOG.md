@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file. See [standa
 
 ## [1.4.0](https://github.com/aws-actions/sustainability-scanner/compare/v1.3.1...v1.4.0) (unreleased)
 
+### Features
+
+- add `fail_on_findings` and `max_score_threshold` inputs to use the action as a CI/CD quality gate [#11](https://github.com/aws-actions/sustainability-scanner/issues/11)
+
 ### Bug Fixes
 
 - directory scans no longer overwrite the `results` output with the last scanned file; results are now consolidated into a single report with a `reports` array [#11](https://github.com/aws-actions/sustainability-scanner/issues/11)

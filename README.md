@@ -31,6 +31,14 @@ Name of the stack or stacks to be scanned. See how to [specify stacks](https://d
 
 Path to your `.json` file to extend the Susscan rules set.
 
+### `fail_on_findings`
+
+Optional, defaults to `false`. When set to `true`, the action fails if the scan identifies any sustainability improvement. Useful to enforce a quality gate in CI/CD pipelines.
+
+### `max_score_threshold`
+
+Optional. When set to an integer, the action fails if the total sustainability score exceeds this value. A higher score means more suggested improvements, so a lower threshold is stricter.
+
 ## Outputs
 
 ### `results`
@@ -129,6 +137,32 @@ jobs:
         uses: aws-actions/sustainability-scanner@v1
         with:
           stack_name: '*Stack' # All stacks finishing by Stack, eg. DatabaseStack, ApplicationStack
+```
+
+### Use as a quality gate in CI/CD
+
+```yml
+name: susscan
+
+on:
+  pull_request:
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Fail the job if the total sustainability score exceeds 10
+      - name: AWS Sustainability Scanner
+        uses: aws-actions/sustainability-scanner@v1
+        with:
+          directory: 'my-cf-code'
+          max_score_threshold: 10
+
+      # Or fail the job on any finding by using:
+      #   fail_on_findings: true
 ```
 
 ### Use output for commenting pull requests
