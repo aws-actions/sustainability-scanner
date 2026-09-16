@@ -31,11 +31,37 @@ Name of the stack or stacks to be scanned. See how to [specify stacks](https://d
 
 Path to your `.json` file to extend the Susscan rules set.
 
+### `fail_on_findings`
+
+Optional, defaults to `false`. When set to `true`, the action fails if the scan identifies any sustainability improvement. Useful to enforce a quality gate in CI/CD pipelines.
+
+### `max_score_threshold`
+
+Optional. When set to an integer, the action fails if the total sustainability score exceeds this value. A higher score means more suggested improvements, so a lower threshold is stricter.
+
 ## Outputs
 
 ### `results`
 
 The results from the scanner. See how to use it in this [example](#use-output-for-commenting-pull-requests).
+
+When a single file or CDK stack is scanned, `results` contains the scanner report for that resource. When a directory with multiple templates is scanned, `results` contains a consolidated report with the total `sustainability_score` and a `reports` array holding the individual report of each scanned template:
+
+```json
+{
+    "title": "Sustainability Scanner Report",
+    "version": "1.3.0",
+    "sustainability_score": 12,
+    "reports": [
+        { "file": "template-a.yaml", "sustainability_score": 8, "failed_rules": ["..."] },
+        { "file": "template-b.yaml", "sustainability_score": 4, "failed_rules": ["..."] }
+    ]
+}
+```
+
+## Job summary
+
+The action writes a Markdown summary of the scan to the workflow run's job summary, listing each scanned template with its sustainability score and the identified improvements, with links to the related AWS Well-Architected Sustainability Pillar best practices.
 
 ## Example usage
 
@@ -115,6 +141,32 @@ jobs:
         uses: aws-actions/sustainability-scanner@v1
         with:
           stack_name: '*Stack' # All stacks finishing by Stack, eg. DatabaseStack, ApplicationStack
+```
+
+### Use as a quality gate in CI/CD
+
+```yml
+name: susscan
+
+on:
+  pull_request:
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Fail the job if the total sustainability score exceeds 10
+      - name: AWS Sustainability Scanner
+        uses: aws-actions/sustainability-scanner@v1
+        with:
+          directory: 'my-cf-code'
+          max_score_threshold: 10
+
+      # Or fail the job on any finding by using:
+      #   fail_on_findings: true
 ```
 
 ### Use output for commenting pull requests

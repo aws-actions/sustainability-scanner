@@ -1,5 +1,5 @@
 # Container image that runs your code
-FROM python:3.9-alpine
+FROM python:3.12-alpine
 
 # Install required libs
 RUN apk --no-cache add curl; \
@@ -17,8 +17,9 @@ RUN pip3 install sustainability-scanner
 RUN apk del git; \
     apk del curl
 
-# Copies your code file from your action repository to the filesystem path `/` of the container
+# Copies your code files from your action repository to the filesystem path `/` of the container
 COPY entrypoint.sh /entrypoint.sh
+COPY report.py /report.py
 RUN ["chmod", "+x", "/entrypoint.sh"]
 
 # Code file to execute when the docker container starts up (`entrypoint.sh`)

@@ -18,6 +18,13 @@ inputs:
   rules_file:
     description: File path to extend set of rules
     required: false
+  fail_on_findings:
+    description: Fail the action if any sustainability improvement is identified
+    required: false
+    default: 'false'
+  max_score_threshold:
+    description: Fail the action if the total sustainability score exceeds this value (higher scores mean more improvements to apply)
+    required: false
 outputs:
   results:
     description: Results from the sustainability scan
