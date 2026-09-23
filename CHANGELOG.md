@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
-## [1.4.0](https://github.com/aws-actions/sustainability-scanner/compare/v1.3.1...v1.4.0) (unreleased)
+## [1.4.0](https://github.com/aws-actions/sustainability-scanner/compare/v1.3.1...v1.4.0) (2026-09-23)
 
 ### Features
 
