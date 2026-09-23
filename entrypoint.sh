@@ -14,9 +14,17 @@ if [[ -n "$INPUT_FILE" && -n "$INPUT_STACK_NAME" ]]; then
   exit 1
 fi
 
-# If an external set of rules is defined then add it to RULES_FILE var
-if [ -n "$INPUT_RULES_FILE" ] && [ -e "$INPUT_RULES_FILE" ]; then
-  RULES_FILE="--rules $INPUT_RULES_FILE"
+# Optional scanner arguments are kept in arrays so every element is passed to
+# susscanner as exactly one argument, regardless of whitespace or glob characters.
+SCAN_ARGS=()
+
+# If an external set of rules is defined then add it to the scanner arguments
+if [ -n "$INPUT_RULES_FILE" ]; then
+  if [ ! -e "$INPUT_RULES_FILE" ]; then
+    echo "Rules file not found: $INPUT_RULES_FILE"
+    exit 1
+  fi
+  SCAN_ARGS+=(--rules "$INPUT_RULES_FILE")
 fi
 
 # Create an empty array to store file names to scan
@@ -26,7 +34,7 @@ RESOURCES_TO_SCAN=()
 if [ -n "$INPUT_FILE" ]; then
   RESOURCES_TO_SCAN+=("$INPUT_FILE")
 elif [ -n "$INPUT_STACK_NAME" ]; then
-  FORMAT="--format cdk"
+  SCAN_ARGS+=(--format cdk)
   RESOURCES_TO_SCAN+=("$INPUT_STACK_NAME")
 else
 # Otherwise scan directory provided (root by default)
@@ -47,12 +55,13 @@ else
   fi
 fi
 
-# Build command
+# Run the scanner once per resource. Every argument is quoted so a file name
+# can never be split into several arguments or expanded as a glob.
 RESULTS_FILE=$(mktemp)
 for RESOURCE in "${RESOURCES_TO_SCAN[@]}"; do
   echo "Running susscanner on file: $RESOURCE"
-  echo "susscanner $FORMAT $RESOURCE $RULES_FILE"
-  SUSSCAN_RESULTS=$(susscanner $FORMAT $RESOURCE $RULES_FILE)
+  printf 'susscanner'; printf ' %q' "${SCAN_ARGS[@]}" "$RESOURCE"; printf '\n'
+  SUSSCAN_RESULTS=$(susscanner "${SCAN_ARGS[@]}" "$RESOURCE")
 
   SUSSCAN_EXIT_CODE=$?
 
@@ -72,7 +81,7 @@ GATE_EXIT_CODE=$?
 
 # Save output to GitHub
 EOF=$(dd if=/dev/urandom bs=15 count=1 status=none | base64)
-{ echo "SUSSCAN_RESULTS<<$EOF"; echo "${MERGED_RESULTS:0:65536}"; echo "$EOF"; } >> $GITHUB_ENV
-{ echo "results<<$EOF"; echo "$MERGED_RESULTS"; echo "$EOF"; } >> $GITHUB_OUTPUT
+{ echo "SUSSCAN_RESULTS<<$EOF"; echo "${MERGED_RESULTS:0:65536}"; echo "$EOF"; } >> "$GITHUB_ENV"
+{ echo "results<<$EOF"; echo "$MERGED_RESULTS"; echo "$EOF"; } >> "$GITHUB_OUTPUT"
 
 exit $GATE_EXIT_CODE
