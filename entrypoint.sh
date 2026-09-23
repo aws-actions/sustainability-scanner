@@ -37,22 +37,23 @@ elif [ -n "$INPUT_STACK_NAME" ]; then
   SCAN_ARGS+=(--format cdk)
   RESOURCES_TO_SCAN+=("$INPUT_STACK_NAME")
 else
-# Otherwise scan directory provided (root by default)
-  if [ -d "$INPUT_DIRECTORY" ]; then
-    # Use 'find' to search for YAML and JSON files inside the directory
-    while IFS= read -r -d $'\0' file; do
-      RESOURCES_TO_SCAN+=("$file")
-    done < <(find "$INPUT_DIRECTORY" -type f \( -name "*.json" -o -name "*.yaml" -o -name "*.yml" \) -print0)
-
-    # Check if any files were found
-    if [ -n "$RESOURCES_TO_SCAN" ]; then
-      echo "${#RESOURCES_TO_SCAN[@]} file(s) found in directory: $INPUT_DIRECTORY"
-    else
-      echo "No template files found in directory: $INPUT_DIRECTORY" 
-    fi
-  else
+  # Otherwise scan directory provided (root by default)
+  if [ ! -d "$INPUT_DIRECTORY" ]; then
     echo "Directory not found: $INPUT_DIRECTORY"
+    exit 1
   fi
+
+  # Use 'find' to search for YAML and JSON files inside the directory
+  while IFS= read -r -d $'\0' file; do
+    RESOURCES_TO_SCAN+=("$file")
+  done < <(find "$INPUT_DIRECTORY" -type f \( -name "*.json" -o -name "*.yaml" -o -name "*.yml" \) -print0)
+
+  # Refuse to report success when nothing was scanned
+  if [ "${#RESOURCES_TO_SCAN[@]}" -eq 0 ]; then
+    echo "No template files found in directory: $INPUT_DIRECTORY"
+    exit 1
+  fi
+  echo "${#RESOURCES_TO_SCAN[@]} file(s) found in directory: $INPUT_DIRECTORY"
 fi
 
 # Run the scanner once per resource. Every argument is quoted so a file name
