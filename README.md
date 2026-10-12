@@ -25,7 +25,7 @@ Path to the directory you want to scan. Every `.json`, `.yml` and `.yaml` files 
 
 ### `stack_name`
 
-Name of the stack or stacks to be scanned. See how to [specify stacks](https://docs.aws.amazon.com/cdk/v2/guide/cli.html#cli-stacks) from AWS documentation.
+Name of the stack or stacks to be scanned. See how to [specify stacks](https://docs.aws.amazon.com/cdk/v2/guide/cli.html#cli-stacks) from AWS documentation. The value may contain letters, digits and `_ . / : * ? -`, and must not start with `-`. Use a wildcard pattern such as `*Stack` instead of listing several stacks separated by spaces.
 
 ### `rules_file`
 
@@ -214,6 +214,12 @@ jobs:
 ```
 
 ## Security
+
+### Security considerations
+
+Template files are copied to a temporary directory with neutral names before they are scanned, so unusual file names (quotes, spaces, line breaks) cannot alter how the scanner invokes CFN Guard. The original names are kept in the results and the job summary.
+
+The scanner can still report no findings for a file that CFN Guard cannot parse (for example invalid YAML). This is a behavior of the underlying [sustainability-scanner](https://github.com/awslabs/sustainability-scanner) that this action cannot change. If the action is a required check, validate template syntax in a separate step.
 
 See [CONTRIBUTING](CONTRIBUTING.md#security-issue-notifications) for more information.
 
