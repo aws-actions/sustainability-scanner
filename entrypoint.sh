@@ -70,6 +70,13 @@ if [ -n "$INPUT_FILE" ]; then
   ORIGINALS+=("$INPUT_FILE")
   STAGE_TEMPLATES=true
 elif [ -n "$INPUT_STACK_NAME" ]; then
+  # The scanner runs `cdk synth <stack_name>` through shlex, so whitespace,
+  # quotes, a backslash or a leading dash could inject extra cdk arguments
+  # (for example --app). Wildcards are safe: no shell and no glob expansion.
+  if [[ ! "$INPUT_STACK_NAME" =~ ^[A-Za-z0-9_./:*?-]+$ ]] || [[ "$INPUT_STACK_NAME" == -* ]]; then
+    echo "stack_name contains unsupported characters. Allowed: letters, digits and _ . / : * ? - (must not start with -)"
+    exit 1
+  fi
   SCAN_ARGS+=(--format cdk)
   ORIGINALS+=("$INPUT_STACK_NAME")
   RESOURCES_TO_SCAN+=("$INPUT_STACK_NAME")
