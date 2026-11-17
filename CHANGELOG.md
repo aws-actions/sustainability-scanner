@@ -2,6 +2,25 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [Unreleased]
+
+### Security
+
+- fail closed when CFN Guard errors or its result does not match the scanner report: sustainability-scanner 1.3.0 hides CFN Guard errors (for example invalid YAML) and reports a clean score, so a malformed template could pass the gate. The action now checks CFN Guard's own exit code and output for every file, independently of the scanner version
+- workflow commands (`::cmd::` and `##[cmd]`) in the scan output are no longer processed by the runner while the action runs
+- CFN Guard and scanner error output, which can contain template content, is now printed escaped
+
+### Behaviour changes
+
+- in directory mode, files that CFN Guard cannot parse are skipped and listed in the log and the job summary when they cannot be CloudFormation templates; unparseable files that could be templates, including empty `.json`/`.yml`/`.yaml` files, now fail the action. Users of the default `directory: '.'` should check the skip list, or set `directory` or `file` to scan only their templates
+- a file given with the `file` input is never skipped: any CFN Guard error fails the action
+- every file is scanned before the action fails, and all failed files are listed
+- scan errors exit with code 2
+
+### Bug Fixes
+
+- pin `click<8.2` in the Dockerfile: with click 8.2+, `rules_file` was read as an extra template and the action failed with "Expected 1 scanner report(s) but received 2"
+
 ## [1.4.1](https://github.com/aws-actions/sustainability-scanner/compare/v1.4.0...v1.4.1) (2026-10-12)
 
 ### Security

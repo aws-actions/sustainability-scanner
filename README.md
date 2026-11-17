@@ -17,11 +17,11 @@ with:
 
 ### `file`
 
-Path to the specific file you want to scan.
+Path to the specific file you want to scan. This file is never skipped: the action fails if CFN Guard cannot parse it.
 
 ### `directory`
 
-Path to the directory you want to scan. Every `.json`, `.yml` and `.yaml` files that this directory contain will be scan.
+Path to the directory you want to scan. Every `.json`, `.yml` and `.yaml` files that this directory contain will be scan. Files that CFN Guard cannot parse are skipped only when they cannot be CloudFormation templates, see [Errored scans and skipped files](#errored-scans-and-skipped-files).
 
 ### `stack_name`
 
@@ -59,9 +59,11 @@ When a single file or CDK stack is scanned, `results` contains the scanner repor
 }
 ```
 
+When every file in the directory is skipped, `results` is `{}`. When a scan error makes the action fail, `results` is empty.
+
 ## Job summary
 
-The action writes a Markdown summary of the scan to the workflow run's job summary, listing each scanned template with its sustainability score and the identified improvements, with links to the related AWS Well-Architected Sustainability Pillar best practices.
+The action writes a Markdown summary of the scan to the workflow run's job summary, listing each scanned template with its sustainability score and the identified improvements, with links to the related AWS Well-Architected Sustainability Pillar best practices. The summary also lists the files that could not be scanned (scan errors) and the skipped files, with the reason.
 
 ## Example usage
 
@@ -219,9 +221,31 @@ jobs:
 
 Template files are copied to a temporary directory with neutral names before they are scanned, so unusual file names (quotes, spaces, line breaks) cannot alter how the scanner invokes CFN Guard. The original names are kept in the results and the job summary.
 
-The scanner can still report no findings for a file that CFN Guard cannot parse (for example invalid YAML). This is a behavior of the underlying [sustainability-scanner](https://github.com/awslabs/sustainability-scanner) that this action cannot change. If the action is a required check, validate template syntax in a separate step.
+The action stops the runner from processing workflow commands while it runs, so template content in the scan output cannot be interpreted as a workflow command, and CFN Guard error output is printed escaped.
 
 See [CONTRIBUTING](CONTRIBUTING.md#security-issue-notifications) for more information.
+
+### Errored scans and skipped files
+
+The action checks CFN Guard's own exit code and output for every file, and fails when CFN Guard did not evaluate the file completely. This covers invalid YAML or JSON, empty or non-UTF-8 files, rule-file and evaluation errors, output without any rule result, and a scanner report that lacks a failed rule. Rules disabled with `rules_file` are not reported and do not fail the scan. The action scans every file first, then lists all the files that failed in the log and the job summary.
+
+In `file` and `stack_name` mode, nothing is skipped: any CFN Guard error fails the action.
+
+In `directory` mode, a file that CFN Guard cannot parse is skipped and listed, with the reason, in the log and the job summary, unless it could be a CloudFormation template. A file that could be a template fails the action. Any other CFN Guard error always fails. A file could be a CloudFormation template when:
+
+1. after removing a leading UTF-8 byte order mark, it is not valid UTF-8 text (for example UTF-16 with a byte order mark, or binary data), or
+2. it contains a NUL byte (for example UTF-16 or UTF-32 without a byte order mark), or
+3. it is empty or contains only whitespace, or
+4. it contains `Resources`, `AWSTemplateFormatVersion` or `Transform` (case-sensitive) in any of these views of its text, after removing every character other than the ASCII letters `A`-`Z` and `a`-`z`:
+   - the text as is;
+   - the text with every `\xHH`, `\uHHHH` and `\UHHHHHHHH` escape decoded;
+   - the decoded text after Unicode NFKC normalization (for example fullwidth letters).
+
+Every deployable template has a `Resources` section, and JSON or YAML can only spell that key with literal letters or these escapes, so quoting, flow style, comments, line continuations or another encoding cannot hide it. The detection is conservative: a file that is not a template but mentions one of these words fails the action.
+
+To avoid skipped files or such failures, point `directory` at the folder that holds your templates, or use `file`. Under the default `directory: '.'`, files such as `.github/workflows/*.yml`, `tsconfig.json` with comments, Helm templates or docker-compose files with merge keys are typically skipped.
+
+CFN Guard itself evaluates only the first document of a multi-document YAML file, and reads a YAML template that starts with a UTF-8 byte order mark without its top-level keys; the action does not change this.
 
 ## License
 
