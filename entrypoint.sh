@@ -130,6 +130,9 @@ if [[ "$REAL_GUARD" != /* ]]; then
 fi
 STATE_DIR=$(mktemp -d /tmp/susscan-state.XXXXXXXX) || { echo "Unable to create state directory"; exit 1; }
 mkdir "$STATE_DIR/bin" "$STATE_DIR/runs" || { echo "Unable to create state directory"; exit 1; }
+# Parse-only probe: this rule cannot error, so exit 255 means CFN Guard could
+# not parse the data file
+echo 'rule parse_probe { this exists }' > "$STATE_DIR/parse-probe.guard" || { echo "Unable to create state directory"; exit 1; }
 cat > "$STATE_DIR/bin/cfn-guard" <<'EOF'
 #!/bin/bash
 # Records what CFN Guard really did, so report.py can check the scanner's report.
@@ -196,6 +199,15 @@ for i in "${!RESOURCES_TO_SCAN[@]}"; do
     susscanner "${SCAN_ARGS[@]}" "$RESOURCE" > "$RUN_DIR/scanner.stdout" 2> "$RUN_DIR/scanner.stderr"
   SUSSCAN_EXIT_CODE=$?
   echo "$SUSSCAN_EXIT_CODE" > "$RUN_DIR/scanner.exit"
+
+  # When CFN Guard failed without printing any result, check whether it can
+  # parse the file at all. In directory mode, report.py skips the file only if
+  # it cannot be a CloudFormation template; otherwise the result only names
+  # the error.
+  if [ "$STAGE_TEMPLATES" = true ] && [ "$(cat "$RUN_DIR/guard.exit" 2>/dev/null)" = 255 ] && [ ! -s "$RUN_DIR/guard.stdout" ]; then
+    "$REAL_GUARD" validate --rules "$STATE_DIR/parse-probe.guard" --data "$RESOURCE" > /dev/null 2>&1
+    echo "$?" > "$RUN_DIR/probe.exit"
+  fi
 
   GUARD_EXIT="not run"
   if [ -s "$RUN_DIR/guard.exit" ]; then GUARD_EXIT=$(tr -cd '0-9' < "$RUN_DIR/guard.exit"); fi

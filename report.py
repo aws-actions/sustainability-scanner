@@ -22,6 +22,11 @@ enabled in the rules metadata. Any other result is a scan error and the run
 fails closed. All runs are checked before failing, so every failed file is
 listed.
 
+In directory mode only, a file that CFN Guard cannot parse is skipped (and
+listed) when it cannot be a CloudFormation template (see could_be_template).
+A file that could be a template fails. In file mode a parse failure always
+fails.
+
 When every run is valid:
 
   1. Prints a single consolidated JSON report to stdout.
@@ -47,6 +52,7 @@ import json
 import os
 import re
 import sys
+import unicodedata
 from collections import Counter
 from pathlib import PurePosixPath
 
@@ -92,6 +98,7 @@ _RUN_TEXT_FILES = {
     "guard_exit": "guard.exit",
     "guard_stdout": "guard.stdout",
     "guard_stderr": "guard.stderr",
+    "probe_exit": "probe.exit",
 }
 
 
@@ -211,6 +218,63 @@ def log_text(value, limit=2000):
     return json.dumps(text, ensure_ascii=True).replace("##[", "##\\[")
 
 
+TEMPLATE_MARKERS = ("Resources", "AWSTemplateFormatVersion", "Transform")
+_ESCAPE = re.compile(r"\\(?:x([0-9A-Fa-f]{2})|u([0-9A-Fa-f]{4})|U([0-9A-Fa-f]{8}))")
+_NON_LETTERS = re.compile(r"[^A-Za-z]+")
+
+
+def _decode_escape(match):
+    value = int(next(group for group in match.groups() if group), 16)
+    return chr(value) if value <= 0x10FFFF else match.group(0)
+
+
+def could_be_template(data):
+    """Decide whether an unparseable file could be a CloudFormation template.
+
+    Returns (verdict, reason). When in doubt the verdict is True (fail).
+
+    Every deployable template has a top-level "Resources" key; "Transform"
+    (macros, AWS::Include) is the only way to add content later, and
+    "AWSTemplateFormatVersion" is checked for extra caution. In the syntax
+    CloudFormation accepts (JSON, and YAML 1.1 without aliases, merge keys or
+    the binary tag), a key's characters are either literal or written as a
+    \\x, \\u or \\U escape. Every other escape, quoting, flow style, explicit
+    keys, comments, line folding and escaped line breaks only add non-letters
+    between the letters. So the key always appears in the letters-only text
+    of the file, with escapes decoded. The checks, in order:
+
+      1. A leading UTF-8 BOM is ignored.
+      2. Not valid UTF-8 (UTF-16/32 with a BOM, other encodings, binary data):
+         could be a template.
+      3. Contains a NUL byte (UTF-16/32 without a BOM, which is ASCII
+         interleaved with NUL and can hide escapes): could be a template.
+      4. Empty or whitespace only: could be a template.
+      5. Three views of the text are searched: as is, with every \\xHH,
+         \\uHHHH and \\UHHHHHHHH escape decoded (greedily, even where a parser
+         would not), and the decoded view after NFKC normalization (fullwidth
+         letters). Every character other than A-Z and a-z is removed. A view
+         containing a marker (case-sensitive) could be a template.
+      6. Otherwise the file cannot be a template.
+    """
+    if data.startswith(b"\xef\xbb\xbf"):
+        data = data[3:]
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError:
+        return True, "it is not valid UTF-8 text"
+    if "\0" in text:
+        return True, "it contains NUL bytes"
+    if not text.strip():
+        return True, "it is empty"
+    decoded = _ESCAPE.sub(_decode_escape, text)
+    for view in (text, decoded, unicodedata.normalize("NFKC", decoded)):
+        letters = _NON_LETTERS.sub("", view)
+        for marker in TEMPLATE_MARKERS:
+            if marker in letters:
+                return True, f"it mentions {marker}"
+    return False, "it does not mention " + ", ".join(TEMPLATE_MARKERS[:-1]) + " or " + TEMPLATE_MARKERS[-1]
+
+
 def _int(value):
     try:
         return int(value.strip())
@@ -221,7 +285,8 @@ def _int(value):
 def check_run(run, mode, effective, bundled):
     """Check one run against CFN Guard's own result.
 
-    Returns ("ok", report) or ("error", reason). The first failed check wins.
+    Returns ("ok", report), ("skipped", reason) or ("error", reason). The
+    first failed check wins.
     """
     # 1. The wrapper recorded exactly one CFN Guard call
     calls = len((run["guard_calls"] or "").splitlines())
@@ -241,11 +306,34 @@ def check_run(run, mode, effective, bundled):
     code = _int(run["guard_exit"])
     if code is None:
         return "error", "cfn-guard did not report an exit code"
+    stdout = run["guard_stdout"] or ""
     if code not in (0, 19):
+        # A parse failure: exit 255, no rule result, and the parse-only probe
+        # also exits 255. Directory mode only: it is skipped when the file
+        # cannot be a template. Every other error fails.
+        parse_failure = (
+            code == 255
+            and not stdout
+            and (run["probe_exit"] or "").strip() == "255"
+        )
+        if parse_failure and mode != "directory":
+            return "error", "CFN Guard could not parse this file (exit 255)"
+        if parse_failure:
+            try:
+                with open(run["resource"], "rb") as f:
+                    data = f.read()
+            except (OSError, TypeError):
+                return "error", "unable to read the staged file"
+            template, reason = could_be_template(data)
+            if template:
+                return "error", (
+                    "CFN Guard could not parse this file and it could be a "
+                    "CloudFormation template: " + reason
+                )
+            return "skipped", "CFN Guard could not parse this file and " + reason
         return "error", f"cfn-guard exited with code {code}"
 
     # 4. At least one rule file was evaluated
-    stdout = run["guard_stdout"] or ""
     blocks = guard_blocks(stdout)
     if not blocks:
         return "error", f"cfn-guard exited with code {code} without evaluating any rule"
@@ -350,11 +438,11 @@ def render_rule_row(rule):
     return f"| {name} | {severity} | {message} | {resources} |"
 
 
-def render_summary(reports, errors=()):
+def render_summary(reports, errors=(), skipped=()):
     """Render the Markdown step summary for the scanned templates.
 
-    errors is a list of (name, reason) pairs for files that could not be
-    scanned. Reasons are fixed strings from check_run, never tool output.
+    errors and skipped are lists of (name, reason) pairs for files that could
+    not be scanned. Reasons are fixed strings from check_run, never tool output.
     """
     lines = ["# AWS Sustainability Scanner Report", ""]
 
@@ -400,6 +488,23 @@ def render_summary(reports, errors=()):
         lines += [
             f"| ❌ `{inline_text(name)}` | {inline_text(reason)} |"
             for name, reason in errors
+        ]
+        lines.append("")
+
+    if skipped:
+        lines += [
+            "## Skipped files",
+            "",
+            "CFN Guard could not parse these files and they cannot be "
+            "CloudFormation templates, so they were not scanned. Set "
+            "`directory` or `file` to scan only your templates.",
+            "",
+            "| File | Reason |",
+            "| --- | --- |",
+        ]
+        lines += [
+            f"| ⏭️ `{inline_text(name)}` | {inline_text(reason)} |"
+            for name, reason in skipped
         ]
         lines.append("")
 
@@ -470,6 +575,7 @@ def main():
 
     reports = []
     errors = []
+    skipped = []
     for run_dir in run_dirs:
         run = read_run(run_dir)
         status, value = check_run(run, mode, effective, bundled)
@@ -479,6 +585,10 @@ def main():
             name = original_label(run["original"])
         if status == "ok":
             reports.append(value)
+            continue
+        if status == "skipped":
+            skipped.append((name, value))
+            print(f"Skipped: {log_text(name)}: {value}", file=sys.stderr)
             continue
         errors.append((name, value))
         print(f"Scan error: {log_text(name)}: {value}", file=sys.stderr)
@@ -491,7 +601,14 @@ def main():
     summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
     if summary_path:
         with open(summary_path, "a") as f:
-            f.write(render_summary(reports, errors))
+            f.write(render_summary(reports, errors, skipped))
+
+    if skipped:
+        print(
+            f"{len(skipped)} file(s) skipped: CFN Guard could not parse them "
+            "and they cannot be CloudFormation templates.",
+            file=sys.stderr,
+        )
 
     if errors:
         print(
