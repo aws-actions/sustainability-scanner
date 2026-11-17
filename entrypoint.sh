@@ -16,16 +16,30 @@ fi
 
 # Temporary state, removed on every exit path. Variables are initialised empty
 # so the trap is safe when the script exits early.
+STOP_TOKEN=""
 STAGING_DIR=""
 RESULTS_FILE=""
 LABELS_FILE=""
 cleanup() {
+  if [ -n "$STOP_TOKEN" ]; then echo "::$STOP_TOKEN::"; fi
   if [ -n "$STAGING_DIR" ]; then rm -rf -- "$STAGING_DIR"; fi
   if [ -n "$RESULTS_FILE" ]; then rm -f -- "$RESULTS_FILE"; fi
   if [ -n "$LABELS_FILE" ]; then rm -f -- "$LABELS_FILE"; fi
   return 0
 }
 trap cleanup EXIT
+
+# Template content and the scanner output (for example resource paths in the
+# JSON report) can contain "::cmd::" lines, or "##[cmd]" anywhere in a line.
+# Stop the runner from processing workflow commands until the action exits;
+# cleanup prints the token that resumes them.
+STOP_TOKEN=$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')
+if [[ ! "$STOP_TOKEN" =~ ^[0-9a-f]{32}$ ]]; then
+  STOP_TOKEN=""
+  echo "Unable to generate a stop-commands token"
+  exit 1
+fi
+echo "::stop-commands::$STOP_TOKEN"
 
 # Template names come from the repository being scanned and are untrusted.
 # Print them escaped on a single line, always after a fixed prefix, so a name
