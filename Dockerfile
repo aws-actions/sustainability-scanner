@@ -12,7 +12,9 @@ RUN curl --proto '=https' --tlsv1.2 -sSf "https://raw.githubusercontent.com/aws-
 ENV PATH="/root/.guard/bin:${PATH}"
 
 # Install AWS SusScan (pinned)
-RUN pip3 install --no-cache-dir sustainability-scanner==1.3.0
+# typer 0.12.4 (required by sustainability-scanner 1.3.0) mis-parses options with
+# click 8.2+, so --rules would be read as a template
+RUN pip3 install --no-cache-dir sustainability-scanner==1.3.0 'click<8.2'
 
 # Uninstall libs
 RUN apk del git; \

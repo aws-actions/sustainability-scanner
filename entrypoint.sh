@@ -16,16 +16,28 @@ fi
 
 # Temporary state, removed on every exit path. Variables are initialised empty
 # so the trap is safe when the script exits early.
+STOP_TOKEN=""
 STAGING_DIR=""
-RESULTS_FILE=""
-LABELS_FILE=""
+STATE_DIR=""
 cleanup() {
+  if [ -n "$STOP_TOKEN" ]; then echo "::$STOP_TOKEN::"; fi
   if [ -n "$STAGING_DIR" ]; then rm -rf -- "$STAGING_DIR"; fi
-  if [ -n "$RESULTS_FILE" ]; then rm -f -- "$RESULTS_FILE"; fi
-  if [ -n "$LABELS_FILE" ]; then rm -f -- "$LABELS_FILE"; fi
+  if [ -n "$STATE_DIR" ]; then rm -rf -- "$STATE_DIR"; fi
   return 0
 }
 trap cleanup EXIT
+
+# Template content and the scanner output (for example resource paths in the
+# JSON report) can contain "::cmd::" lines, or "##[cmd]" anywhere in a line.
+# Stop the runner from processing workflow commands until the action exits;
+# cleanup prints the token that resumes them.
+STOP_TOKEN=$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')
+if [[ ! "$STOP_TOKEN" =~ ^[0-9a-f]{32}$ ]]; then
+  STOP_TOKEN=""
+  echo "Unable to generate a stop-commands token"
+  exit 1
+fi
+echo "::stop-commands::$STOP_TOKEN"
 
 # Template names come from the repository being scanned and are untrusted.
 # Print them escaped on a single line, always after a fixed prefix, so a name
@@ -69,6 +81,7 @@ if [ -n "$INPUT_FILE" ]; then
   fi
   ORIGINALS+=("$INPUT_FILE")
   STAGE_TEMPLATES=true
+  MODE="file"
 elif [ -n "$INPUT_STACK_NAME" ]; then
   # The scanner runs `cdk synth <stack_name>` through shlex, so whitespace,
   # quotes, a backslash or a leading dash could inject extra cdk arguments
@@ -80,6 +93,7 @@ elif [ -n "$INPUT_STACK_NAME" ]; then
   SCAN_ARGS+=(--format cdk)
   ORIGINALS+=("$INPUT_STACK_NAME")
   RESOURCES_TO_SCAN+=("$INPUT_STACK_NAME")
+  MODE="cdk"
 else
   # Otherwise scan directory provided (root by default)
   if [ ! -d "$INPUT_DIRECTORY" ]; then
@@ -99,7 +113,40 @@ else
   fi
   echo "${#ORIGINALS[@]} file(s) found in directory: $(display_name "$INPUT_DIRECTORY")"
   STAGE_TEMPLATES=true
+  MODE="directory"
 fi
+
+# sustainability-scanner 1.3.0 ignores cfn-guard's exit code and error output
+# and reports a clean score when cfn-guard fails. It finds cfn-guard through
+# PATH, so put a wrapper first on PATH for each scan: the wrapper runs the real
+# binary unchanged and records its argv, exit code, stdout and stderr in the
+# run directory. report.py checks that record against the scanner's report and
+# fails closed when cfn-guard did not evaluate the file completely. stderr is
+# kept out of the log (it echoes template content); report.py prints it escaped.
+REAL_GUARD=$(command -v cfn-guard)
+if [[ "$REAL_GUARD" != /* ]]; then
+  echo "cfn-guard not found"
+  exit 1
+fi
+STATE_DIR=$(mktemp -d /tmp/susscan-state.XXXXXXXX) || { echo "Unable to create state directory"; exit 1; }
+mkdir "$STATE_DIR/bin" "$STATE_DIR/runs" || { echo "Unable to create state directory"; exit 1; }
+# Parse-only probe: this rule cannot error, so exit 255 means CFN Guard could
+# not parse the data file
+echo 'rule parse_probe { this exists }' > "$STATE_DIR/parse-probe.guard" || { echo "Unable to create state directory"; exit 1; }
+cat > "$STATE_DIR/bin/cfn-guard" <<'EOF'
+#!/bin/bash
+# Records what CFN Guard really did, so report.py can check the scanner's report.
+state=${SUSSCAN_GUARD_STATE:?}
+real=${SUSSCAN_REAL_GUARD:?}
+echo call >> "$state/guard.calls"
+printf '%s\0' "$@" > "$state/guard.argv"
+"$real" "$@" > "$state/guard.stdout" 2> "$state/guard.stderr"
+rc=$?
+echo "$rc" > "$state/guard.exit"
+cat "$state/guard.stdout"
+exit "$rc"
+EOF
+chmod 700 "$STATE_DIR/bin/cfn-guard" || { echo "Unable to create the cfn-guard wrapper"; exit 1; }
 
 # sustainability-scanner rebuilds a shell-style command string from the template
 # path, so quotes, spaces or line breaks in a file name can change the arguments
@@ -110,7 +157,6 @@ fi
 if [ "$STAGE_TEMPLATES" = true ]; then
   # Explicit template: a TMPDIR containing whitespace or quotes must not leak in
   STAGING_DIR=$(mktemp -d /tmp/susscan.XXXXXXXX) || { echo "Unable to create staging directory"; exit 1; }
-  LABELS_FILE=$(mktemp /tmp/susscan-labels.XXXXXXXX) || { echo "Unable to create labels file"; exit 1; }
 
   COUNTER=0
   for ORIGINAL in "${ORIGINALS[@]}"; do
@@ -131,36 +177,54 @@ if [ "$STAGE_TEMPLATES" = true ]; then
       echo "Unable to read template: $(display_name "$ORIGINAL")"
       exit 1
     fi
-    # NUL-separated pairs: NUL is the only byte that cannot appear in a path
-    printf '%s\0%s\0' "$STAGED" "$ORIGINAL" >> "$LABELS_FILE"
     RESOURCES_TO_SCAN+=("$STAGED")
   done
 fi
 
 # Run the scanner once per resource. Every argument is quoted so a path can
-# never be split into several arguments or expanded as a glob.
-RESULTS_FILE=$(mktemp)
+# never be split into several arguments or expanded as a glob. Every resource
+# is scanned, even after an error; report.py decides the outcome. Each run
+# directory holds the staged path, the original name, the scanner's output and
+# exit code, and the cfn-guard record written by the wrapper.
 for i in "${!RESOURCES_TO_SCAN[@]}"; do
   RESOURCE="${RESOURCES_TO_SCAN[$i]}"
+  printf -v RUN_DIR '%s/runs/%04d' "$STATE_DIR" $((i + 1))
+  mkdir "$RUN_DIR" || { echo "Unable to create run directory"; exit 1; }
+  printf '%s' "$RESOURCE" > "$RUN_DIR/resource"
+  printf '%s' "${ORIGINALS[$i]}" > "$RUN_DIR/original"
+
   echo "Running susscanner on file: $(display_name "${ORIGINALS[$i]}")"
   printf 'susscanner'; printf ' %q' "${SCAN_ARGS[@]}" "$RESOURCE"; printf '\n'
-  SUSSCAN_RESULTS=$(susscanner "${SCAN_ARGS[@]}" "$RESOURCE")
-
+  SUSSCAN_GUARD_STATE="$RUN_DIR" SUSSCAN_REAL_GUARD="$REAL_GUARD" PATH="$STATE_DIR/bin:$PATH" \
+    susscanner "${SCAN_ARGS[@]}" "$RESOURCE" > "$RUN_DIR/scanner.stdout" 2> "$RUN_DIR/scanner.stderr"
   SUSSCAN_EXIT_CODE=$?
+  echo "$SUSSCAN_EXIT_CODE" > "$RUN_DIR/scanner.exit"
 
+  # When CFN Guard failed without printing any result, check whether it can
+  # parse the file at all. In directory mode, report.py skips the file only if
+  # it cannot be a CloudFormation template; otherwise the result only names
+  # the error.
+  if [ "$STAGE_TEMPLATES" = true ] && [ "$(cat "$RUN_DIR/guard.exit" 2>/dev/null)" = 255 ] && [ ! -s "$RUN_DIR/guard.stdout" ]; then
+    "$REAL_GUARD" validate --rules "$STATE_DIR/parse-probe.guard" --data "$RESOURCE" > /dev/null 2>&1
+    echo "$?" > "$RUN_DIR/probe.exit"
+  fi
+
+  GUARD_EXIT="not run"
+  if [ -s "$RUN_DIR/guard.exit" ]; then GUARD_EXIT=$(tr -cd '0-9' < "$RUN_DIR/guard.exit"); fi
+  echo "cfn-guard exit code: $GUARD_EXIT"
   if [ $SUSSCAN_EXIT_CODE -eq 0 ]; then
-    echo "${SUSSCAN_RESULTS}"
-    # Accumulate each report so results are not overwritten between scans
-    echo "${SUSSCAN_RESULTS}" >> "$RESULTS_FILE"
-  else
-    echo "Scan failed with exit code $SUSSCAN_EXIT_CODE."
-    exit $SUSSCAN_EXIT_CODE
+    # A report built from a failed cfn-guard run is meaningless (score 0)
+    if [ "$GUARD_EXIT" = 0 ] || [ "$GUARD_EXIT" = 19 ]; then
+      cat "$RUN_DIR/scanner.stdout"
+    else
+      echo "Scanner report discarded: cfn-guard did not return a result"
+    fi
   fi
 done
 
-# Consolidate reports, restore the original template names, write the step
-# summary and evaluate failure gates. LABELS_FILE is empty in CDK mode.
-MERGED_RESULTS=$(python3 "${REPORT_SCRIPT:-/report.py}" "$RESULTS_FILE" ${LABELS_FILE:+"$LABELS_FILE"})
+# Check every run against cfn-guard's own result, restore the original
+# template names, write the step summary and evaluate failure gates.
+MERGED_RESULTS=$(python3 "${REPORT_SCRIPT:-/report.py}" "$MODE" "$STATE_DIR/runs")
 GATE_EXIT_CODE=$?
 
 # Save output to GitHub
